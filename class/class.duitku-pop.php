@@ -258,6 +258,7 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
     $params = array(
       'merchantOrderId' => $this->prefix . $order_id,
       'merchantUserInfo' => $current_user,
+      'customerVaName' => $current_user,
       'paymentAmount' => intval($order->order_total),
       'paymentMethod' => $this->payment_method,
       'expiryPeriod' => intval($this->expiryPeriod),
