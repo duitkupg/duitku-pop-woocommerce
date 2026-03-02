@@ -3,7 +3,7 @@
  * Plugin Name: Duitku Pop Payment Gateway
  * 
  * Description:  Duitku Payment Gateway payment channel selection on payment page
- * Version: 1.0.3
+ * Version: 1.0.4
  *
  * Author: Duitku Development Team
  * Author URI: https://www.duitku.com/
