@@ -2,14 +2,14 @@
 
 Plugin Name:  Duitku Pop Payment Gateway
 Plugin URI:   https://github.com/duitkupg/duitku-pop-plugin/
-Version:      1.0.5
+Version:      1.0.6
 Author:       Duitku
 Contributors: anggiyawanduitku, heripurnama, rayhanduitku, febriana, dhanisuhendra10
 Author URI:   http://duitku.com
 Tags:         Payment Gateway, Duitku, Woocommerce, Virtual Account, QRIS
 Requires at least: 4.7
 Tested up to: 6.6.2
-Stable tag: 1.0.5
+Stable tag: 1.0.6
 Requires PHP: 7.4
 Author URI:   http://duitku.com
 License:      GPLv3 or Later
@@ -89,6 +89,11 @@ Integrating online payments with Duitku is very easy, web integration using our 
 10. Duitku System Flow
 
 == Changelog ==
+
+= 1.0.6 =
+
+Security: verify order key on the payment return path and compare signatures with hash_equals (CVE-2026-32468)
+Security: remove customer data from debug logs
 
 = 1.0.5 =
 

@@ -15,7 +15,7 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
   /** you can control it with Sanitized (default: true) */
   public static $sanitized = true;
   public static $validation = true;
-	
+
   function __construct()
   {
 
@@ -34,7 +34,7 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
     $this->apiKey             = $this->get_option('duitku_api_key');
     $this->merchantCode       = $this->get_option('duitku_merchant_code');
     $this->expiryPeriod       = $this->get_option('expiry_period');
-    $this->prefix			  = $this->get_option('prefix');
+    $this->prefix             = $this->get_option('prefix');
     $this->pluginStatus       = $this->get_option('plugin_status');
     $this->lang               = $this->get_option('duitku_language');
     $this->currency           = $this->get_option('duitku_currency');
@@ -131,12 +131,12 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
         'default' => ''
       ),
       'prefix' => array(
-		'title' => __('Duitku Prefix', 'wc_duitku'),
-		'type' => 'text',
-		'description' => __('Prefix order id. Dapat digunakan untuk custom order id', 'woocommerce'),
-		'id' => self::$option_prefix . '_prefix',
-		'default' => ''
-	  ),
+        'title' => __('Duitku Prefix', 'wc_duitku'),
+        'type' => 'text',
+        'description' => __('Prefix order id. Dapat digunakan untuk custom order id', 'woocommerce'),
+        'id' => self::$option_prefix . '_prefix',
+        'default' => ''
+      ),
       'expiry_period' => array(
         'title' => __('Expiry Period', 'woocommerce'),
         'type' => 'text',
@@ -266,8 +266,8 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
       'additionalParam' => '',
       'email' => $order->get_billing_email(),
       'phoneNumber' => $order->get_billing_phone(),
-      'returnUrl' => esc_url_raw($this->redirect_url) . '?status=notify',
-	  'callbackUrl' => esc_url_raw($this->redirect_url),
+      'returnUrl' => $order->get_checkout_order_received_url(),
+      'callbackUrl' => esc_url_raw($this->redirect_url),
       'customerDetail' => $customer_details,
       'itemDetails' => $item_details
     );
@@ -275,14 +275,14 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
     if (self::$validation) {
       WC_Gateway_Duitku_Pop_Validation::duitkuRequest($params);
     }
-    
+
     if (self::$sanitized) {
       WC_Gateway_Duitku_Pop_Sanitized::duitkuRequest($params);
     }
 
     $this->log("Create a request for inquiry");
-    $this->log(json_encode($params, true));
-    
+    $this->log('merchantOrderId ' . $params['merchantOrderId'] . ' paymentAmount ' . $params['paymentAmount']);
+
     $headers = array(
       'Content-Type' => 'application/json',
       'x-duitku-signature' => $header_signature,
@@ -295,14 +295,14 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
       'timeout'     => '90',
       'httpversion' => '1.0',
       'headers'     => $headers,
-  );
-  
+    );
+
 
     // Receive server response ...
     $response = wp_remote_post($url, $args);
 
-    $this->log('raw response: ' . json_encode($response));
     $httpcode = wp_remote_retrieve_response_code($response);//curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $this->log('response HTTP code: ' . $httpcode);
     $server_output = wp_remote_retrieve_body($response);//curl_exec($ch);
 
     $successResponse = array(
@@ -351,7 +351,7 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
       } else {
         // Add note to the order for your reference
         $order->add_order_note('Error: error processing payment.');
-        throw new Exception("Error processing payment."); 
+        throw new Exception("Error processing payment.");
       }
       return;
     }
@@ -364,7 +364,7 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
 
   protected function validate_transaction($order_id)
   {
-    $order = wc_get_order( $order_id ); 
+    $order = wc_get_order( $order_id );
     $plugin_status = $this->pluginStatus;
 
     if ($plugin_status == 'sandbox') {
@@ -406,148 +406,112 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
     $this->log("receive response HTTP Code: " . $httpcode . " with status code check transaction: " . $resp->statusCode);
 
     if ($httpcode == '200') {
-		return $server_output;
-	} else {
-		$this->log($server_output);
-	}
+      return $server_output;
+    } else {
+      $this->log($server_output);
+    }
     exit;
   }
 
   function check_duitku_response(){
+    if (strtoupper(isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : '') !== 'POST') {
+      status_header(405);
+      header('Allow: POST');
+      exit('Method Not Allowed');
+    }
+
+    $ctype = isset($_SERVER['CONTENT_TYPE']) ? strtolower($_SERVER['CONTENT_TYPE']) : '';
+    if (strpos($ctype, 'application/x-www-form-urlencoded') === false) {
+      $this->reject_callback('unsupported_content_type', ['content_type' => $ctype]);
+    }
 
     $params = [];
-    $params['resultCode'] = isset($_REQUEST['resultCode']) ? sanitize_text_field($_REQUEST['resultCode']) : null;
-    $params['status'] = isset($_REQUEST['status']) ? sanitize_text_field($_REQUEST['status']) : null;
-    $params['merchantOrderId'] = isset($_REQUEST['merchantOrderId']) ? sanitize_text_field($_REQUEST['merchantOrderId']) : null;
-    $params['reference'] = isset($_REQUEST['reference']) ? sanitize_text_field($_REQUEST['reference']) : null;
+    $params['merchantCode']    = isset($_POST['merchantCode']) ? sanitize_text_field($_POST['merchantCode']) : null;
+    $params['amount']          = isset($_POST['amount']) ? sanitize_text_field($_POST['amount']) : null;
+    $params['merchantOrderId'] = isset($_POST['merchantOrderId']) ? sanitize_text_field($_POST['merchantOrderId']) : null;
+    $params['resultCode']      = isset($_POST['resultCode']) ? sanitize_text_field($_POST['resultCode']) : null;
+    $params['reference']       = isset($_POST['reference']) ? sanitize_text_field($_POST['reference']) : null;
+    $params['signature']       = isset($_POST['signature']) ? sanitize_text_field($_POST['signature']) : null;
 
-    $params['merchantOrderId'] = str_replace($this->prefix,'',$params['merchantOrderId']);
+    if (empty($params['merchantCode']) || $params['amount'] === null || $params['amount'] === ''
+        || empty($params['merchantOrderId']) || empty($params['resultCode'])
+        || empty($params['reference']) || empty($params['signature'])) {
+      $this->reject_callback('missing_parameter', ['missing' => array_keys(array_filter($params, function ($v) { return $v === null || $v === ''; }))]);
+    }
 
-    if (empty($params['resultCode']) || empty($params['merchantOrderId']) || empty($params['reference'])) {
-		throw new Exception(__('wrong query string please contact admin.',
-			'duitku'));
-		return;
-	}
-    $this->log("param status" . $params['status']);
+    if (!ctype_digit((string) $params['amount'])) {
+      $this->reject_callback('invalid_amount', ['merchantOrderId' => $params['merchantOrderId'], 'amount' => $params['amount']]);
+    }
 
-    if (!empty($params['status']) && $params['status'] == 'notify') {
-		$this->notify_response($params);
-		exit;
-	}
-
-    $order_id = wc_clean(stripslashes($params['merchantOrderId']));
+    $reqSignature = $params['signature'];
+    $signature = hash_hmac('sha256', $params['merchantCode'] . $params['amount'] . $params['merchantOrderId'], $this->apiKey);
+    if (!hash_equals($signature, $reqSignature)) {
+      $this->reject_callback('invalid_signature', ['merchantOrderId' => $params['merchantOrderId'], 'merchantCode' => $params['merchantCode']]);
+    }
+    $this->log("Signature valid");
+    
+    $order_id = wc_clean(stripslashes(str_replace($this->prefix, '', $params['merchantOrderId'])));
     $result_Code = wc_clean(stripslashes($params['resultCode']));
     $reference = wc_clean(stripslashes($params['reference']));
 
-    $params['signature']= isset($_REQUEST['signature'])? sanitize_text_field($_REQUEST['signature']): null;
-	$reqSignature = wc_clean(stripslashes($params['signature']));
-
-    $order = wc_get_order( $order_id ); 
-    $amount = intval($order->order_total);
-
-    //signature validation
-	$signature =hash_hmac('sha256', $this->merchantCode . $amount . $this->prefix . $order_id , $this->apiKey);
-
-    // Log raw signature
-	if($reqSignature == $signature){
-		$this->log("Signature valid");
-	}else{
-		$this->log("Invalid signature!");
-		exit;
-	}
+    $order = wc_get_order( $order_id );
+    if (!$order) {
+      $this->log("Callback for unknown order ID " . $order_id);
+      status_header(404);
+      exit('order not found.');
+    }
     $respon = json_decode($this->validate_transaction($order_id));
     $order->update_meta_data('_duitku_result_code', $respon->statusCode);
     $order->update_meta_data('_duitku_reference_number', $reference);
 
     if($result_Code == "00"){
-        $respon = json_decode($this->validate_transaction($order_id));
-        if($respon->statusCode == "00"){
-            $order->payment_complete();
-            $order->add_order_note(__('Pembayaran telah dilakukan melalui duitku dengan order ID ' . $order_id . ' Dan No Reference ' . $reference, 'woocommerce'));
-            $this->log("Callback diterima. Pembayaran dengan order ID " . $order_id . " telah berhasil.");
-        }
-        else if($respon->statusCode == "01"){
-            $order->add_order_note( "Pembayaran menggunakan Duitku dengan order ID " . $order_id . "reference " . $reference_number . " tertunda.");
-            $this->log("Callback diterima. Pembayaran dengan order ID " . $order_id . " tertunda.");
-        }
-        else{
-            $order->add_order_note("Callback diterima dengan result code " . $result_Code . " untuk order ID " . $order_id . " dan hasil validasi cek transaksi status code " . $respon->statusCode);
-            $order->save();
-            $this->log("Callback diterima dengan result code " . $result_Code . " untuk order ID " . $order_id . " dan hasil validasi cek transaksi status code " . $respon->statusCode);
-        }
+      $respon = json_decode($this->validate_transaction($order_id));
+      if($respon->statusCode == "00"){
+        $order->payment_complete();
+        $order->add_order_note(__('Pembayaran telah dilakukan melalui duitku dengan order ID ' . $order_id . ' Dan No Reference ' . $reference, 'woocommerce'));
+        $this->log("Callback diterima. Pembayaran dengan order ID " . $order_id . " telah berhasil.");
+      }
+      else if($respon->statusCode == "01"){
+        $order->add_order_note( "Pembayaran menggunakan Duitku dengan order ID " . $order_id . "reference " . $reference_number . " tertunda.");
+        $this->log("Callback diterima. Pembayaran dengan order ID " . $order_id . " tertunda.");
+      }
+      else{
+        $order->add_order_note("Callback diterima dengan result code " . $result_Code . " untuk order ID " . $order_id . " dan hasil validasi cek transaksi status code " . $respon->statusCode);
+        $order->save();
+        $this->log("Callback diterima dengan result code " . $result_Code . " untuk order ID " . $order_id . " dan hasil validasi cek transaksi status code " . $respon->statusCode);
+      }
     }
     else if($result_Code == "01"){
-        $respon = json_decode($this->validate_transaction($order_id));
-        if($respon->statusCode == "02"){
-            $order->update_status("failed");
-            $order->add_order_note("Pembayaran menggunakan Duitku dengan order ID " . $order_id . "gagal");
-            $this->log("Callback diterima. Pembayaran dengan order ID " . $order_id . "gagal");
-        }
-        else if($respon->statusCode == "01"){
-            $order->add_order_note("Pembayaran menggunakan Duitku dengan order ID " . $order_id . "reference " . $reference_number . "tertunda");
-            $this->log("Callback diterima. Pembayaran dengan order ID " . $order_id . " tertunda.");
-        }
-        else{
-            $order->add_order_note("Callback diterima dengan result code " . $result_Code . " untuk order ID " . $order_id . " dan hasil validasi cek transaksi status code " . $respon->statusCode);
-            $this->log("Callback diterima dengan result code " . $result_Code . " untuk Order ID " . $order_id . " dan hasil validasi cek transaksi status code " . $respon->statusCode);
-        }
+      $respon = json_decode($this->validate_transaction($order_id));
+      if($respon->statusCode == "02"){
+        $order->update_status("failed");
+        $order->add_order_note("Pembayaran menggunakan Duitku dengan order ID " . $order_id . "gagal");
+        $this->log("Callback diterima. Pembayaran dengan order ID " . $order_id . "gagal");
+      }
+      else if($respon->statusCode == "01"){
+        $order->add_order_note("Pembayaran menggunakan Duitku dengan order ID " . $order_id . "reference " . $reference_number . "tertunda");
+        $this->log("Callback diterima. Pembayaran dengan order ID " . $order_id . " tertunda.");
+      }
+      else{
+        $order->add_order_note("Callback diterima dengan result code " . $result_Code . " untuk order ID " . $order_id . " dan hasil validasi cek transaksi status code " . $respon->statusCode);
+        $this->log("Callback diterima dengan result code " . $result_Code . " untuk Order ID " . $order_id . " dan hasil validasi cek transaksi status code " . $respon->statusCode);
+      }
     }
     else{
-        $order->add_order_note("Callback diterima dengan result code " . $result_Code . " untuk Order ID " . $order_id);
-        $this->log("Callback diterima dengan result code " . $result_Code . " untuk Order ID " . $order_id);
+      $order->add_order_note("Callback diterima dengan result code " . $result_Code . " untuk Order ID " . $order_id);
+      $this->log("Callback diterima dengan result code " . $result_Code . " untuk Order ID " . $order_id);
     }
     $order->save();
     exit;
   }
 
-  function notify_response($params){
-      $this->log(var_export($params, true));
-
-      if (empty($params['resultCode']) || empty($params['merchantOrderId'])) {
-		throw new Exception(__('wrong query string please contact admin.', 'duitku'));
-			return false;
-	  }	
-
-      $order_id = wc_clean(stripslashes($params['merchantOrderId']));
-      $order_id = str_replace($this->prefix,'',$order_id);
-      $order = wc_get_order($order_id);
-
-      $order->update_meta_data('_duitku_result_code', $params['resultCode']);
-      $order->update_meta_data('_duitku_reference_number', $params['reference']);
-
-      if ($params['resultCode'] == '00') {
-            $order->add_order_note("Transaksi untuk order ID " . $order_id . " telah diproses, menunggu verifikasi hasil pembayaran");
-            $this->log('Notify Response. Transaksi untuk order ID ' .$order_id . " result code " .$params['resultCode']);
-
-			WC()->cart->empty_cart();
-			wc_add_notice('pembayaran dengan duitku telah diproses, menunggu verifikasi hasil pembayaran untuk order ID ' . $order_id);
-            
-            return wp_redirect($order->get_checkout_order_received_url());
-	  }else if ($params['resultCode'] == '01') {
-            $order->add_order_note("Transaksi untuk order ID " . $order_id . " sedang diproses");												
-			wc_add_notice('pembayaran dengan duitku sedang diproses.');
-            
-            $this->log('Notify Response. Transaksi untuk order ID ' .$order_id . " result code " .$params['resultCode']);
-			return wp_redirect($order->get_view_order_url());
-	  }else if($params['resultCode'] == '02'){
-            $this->log('back to checkout page');
-            $order->add_order_note("Pembayaran dengan Duitku untuk order ID" . $order_id . " dibatalkan/tidak terbayar, dengan result code " .$params['resultCode']);
-            $this->log('Notify Response. Transaksi untuk order ID ' .$order_id . " result code " .$params['resultCode']);
-
-            wc_add_notice('Melakukan pembatalan pembayaran untuk order ID ' . $order_id);
-            WC()->cart->empty_cart();
-            
-            return wp_redirect(home_url('/my-account/orders/'));
-      }
-      else {
-            $order->add_order_note("Pembayaran dengan Duitku untuk order ID" . $order_id . " pembayaran mendapatkan result code " .$params['resultCode']);
-            $this->log('Notify Response. Transaksi untuk order ID ' .$order_id . " result code " .$params['resultCode']);
-            $this->log('back to checkout page');
-            
-            WC()->cart->empty_cart();
-            return wp_redirect(home_url('/my-account/orders/'));	
-	  }
-      $order->save();
+  /**
+  * Replies generic 400; reason goes to the wp-admin log
+  */
+  private function reject_callback($reason, $context = []){
+    $this->log('Callback rejected: ' . wp_json_encode(array_merge(['status' => 400, 'reason' => $reason], $context)));
+    status_header(400);
+    exit('Bad Request');
   }
 
   /**
@@ -555,13 +519,13 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
   */
 
   public function add_duitku_reference_to_order_details($order){
-      $order_id = $order->get_id();
-      $duitku_reference_number = get_post_meta($order_id, '_duitku_reference_number', true);
-      if ($duitku_reference_number) {
-            ?>
-                <p><strong><?php _e('Reference:', 'wc_duitku'); ?></strong> <?php echo esc_html($duitku_reference_number); ?></p>
-            <?php
-      }
+    $order_id = $order->get_id();
+    $duitku_reference_number = get_post_meta($order_id, '_duitku_reference_number', true);
+    if ($duitku_reference_number) {
+      ?>
+        <p><strong><?php _e('Reference:', 'wc_duitku'); ?></strong> <?php echo esc_html($duitku_reference_number); ?></p>
+      <?php
+    }
   }
 
   /**
