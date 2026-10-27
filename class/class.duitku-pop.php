@@ -422,8 +422,7 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
 
     $ctype = isset($_SERVER['CONTENT_TYPE']) ? strtolower($_SERVER['CONTENT_TYPE']) : '';
     if (strpos($ctype, 'application/x-www-form-urlencoded') === false) {
-      status_header(400);
-      exit('Bad Request: unsupported content type.');
+      $this->reject_callback('unsupported_content_type', ['content_type' => $ctype]);
     }
 
     $params = [];
@@ -437,21 +436,17 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
     if (empty($params['merchantCode']) || $params['amount'] === null || $params['amount'] === ''
         || empty($params['merchantOrderId']) || empty($params['resultCode'])
         || empty($params['reference']) || empty($params['signature'])) {
-      status_header(400);
-      exit('Bad Request: missing callback parameter.');
+      $this->reject_callback('missing_parameter', ['missing' => array_keys(array_filter($params, function ($v) { return $v === null || $v === ''; }))]);
     }
 
     if (!ctype_digit((string) $params['amount'])) {
-      status_header(400);
-      exit('Bad Request: invalid amount.');
+      $this->reject_callback('invalid_amount', ['merchantOrderId' => $params['merchantOrderId'], 'amount' => $params['amount']]);
     }
 
     $reqSignature = $params['signature'];
     $signature = hash_hmac('sha256', $params['merchantCode'] . $params['amount'] . $params['merchantOrderId'], $this->apiKey);
     if (!hash_equals($signature, $reqSignature)) {
-      $this->log("Invalid signature!");
-      status_header(400);
-      exit('Bad Request: invalid signature.');
+      $this->reject_callback('invalid_signature', ['merchantOrderId' => $params['merchantOrderId'], 'merchantCode' => $params['merchantCode']]);
     }
     $this->log("Signature valid");
     
@@ -508,6 +503,15 @@ class WC_Gateway_Duitku_Pop extends WC_Payment_Gateway
     }
     $order->save();
     exit;
+  }
+
+  /**
+  * Replies generic 400; reason goes to the wp-admin log
+  */
+  private function reject_callback($reason, $context = []){
+    $this->log('Callback rejected: ' . wp_json_encode(array_merge(['status' => 400, 'reason' => $reason], $context)));
+    status_header(400);
+    exit('Bad Request');
   }
 
   /**
